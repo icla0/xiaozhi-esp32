@@ -46,7 +46,7 @@ list(APPEND SOURCES
     "boards/common/board.cc"
     "boards/common/wifi_board.cc"
     "boards/common/ml307_board.cc"
-    "boards/common/nt26_board.cc"
+    # "boards/common/nt26_board.cc"  # requires uart-eth-modem (removed for v5.4.x compat)
     "boards/common/dual_network_board.cc"
     "boards/common/adc_battery_monitor.cc"
     "boards/common/afsk_demod.cc"
@@ -1016,7 +1016,7 @@ if(CONFIG_IDF_TARGET_ESP32)
                              "led/gpio_led.cc"
                              "display/lvgl_display/jpg/image_to_jpeg.cpp"
                              "display/lvgl_display/jpg/jpeg_to_image.c"
-                             "boards/common/nt26_board.cc"
+                             # "boards/common/nt26_board.cc"  # removed for v5.4.x compat
                              "boards/common/ml307_board.cc"
                              "boards/common/dual_network_board.cc"
                              )
@@ -1082,6 +1082,9 @@ target_compile_definitions(${COMPONENT_LIB}
                     PRIVATE BOARD_TYPE=\"${BOARD_TYPE}\" BOARD_NAME=\"${BOARD_NAME}\"
                     PRIVATE BUILTIN_TEXT_FONT=${BUILTIN_TEXT_FONT} BUILTIN_ICON_FONT=${BUILTIN_ICON_FONT}
                     )
+
+# Enable exceptions+RTTI for mcp_server.h throw + dynamic_cast
+target_compile_options(${COMPONENT_LIB} PRIVATE -fexceptions -frtti -Wno-error=return-type)
 
 # Add generation rules
 add_custom_command(

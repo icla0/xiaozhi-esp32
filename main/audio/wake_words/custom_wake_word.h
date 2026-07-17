@@ -69,6 +69,7 @@ private:
 
     void FeedSamples(const int16_t* data, size_t samples, bool mono);
     void ParseWakenetModelConfig();
+    void ParseKconfigWakeWords();
 };
 
 #endif

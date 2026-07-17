@@ -82,21 +82,67 @@ void CustomWakeWord::ParseWakenetModelConfig() {
 }
 
 
+void CustomWakeWord::ParseKconfigWakeWords() {
+#ifdef CONFIG_CUSTOM_WAKE_WORD
+    threshold_ = CONFIG_CUSTOM_WAKE_WORD_THRESHOLD / 100.0f;
+    // Parse comma-separated wake phrases (e.g., "Hi Nora,Hey Nora")
+    std::string wake_words_str = CONFIG_CUSTOM_WAKE_WORD;
+    std::string display_str = CONFIG_CUSTOM_WAKE_WORD_DISPLAY;
+    size_t pos = 0;
+    int cmd_idx = 0;
+    while (pos < wake_words_str.size()) {
+        size_t comma = wake_words_str.find(',', pos);
+        std::string phrase = wake_words_str.substr(pos, comma == std::string::npos ? std::string::npos : comma - pos);
+        // Trim leading/trailing spaces
+        size_t start = phrase.find_first_not_of(" \t");
+        size_t end = phrase.find_last_not_of(" \t");
+        if (start != std::string::npos && end != std::string::npos) {
+            phrase = phrase.substr(start, end - start + 1);
+        }
+        if (!phrase.empty()) {
+            // Extract corresponding display text by index
+            std::string display_phrase = phrase;
+            size_t dpos = 0;
+            int didx = 0;
+            while (dpos < display_str.size() && didx <= cmd_idx) {
+                size_t dcomma = display_str.find(',', dpos);
+                display_phrase = display_str.substr(dpos, dcomma == std::string::npos ? std::string::npos : dcomma - dpos);
+                size_t dstart = display_phrase.find_first_not_of(" \t");
+                size_t dend = display_phrase.find_last_not_of(" \t");
+                if (dstart != std::string::npos && dend != std::string::npos) {
+                    display_phrase = display_phrase.substr(dstart, dend - dstart + 1);
+                }
+                if (didx == cmd_idx) break;
+                dpos = (dcomma == std::string::npos) ? display_str.size() : dcomma + 1;
+                didx++;
+            }
+            commands_.push_back({phrase, display_phrase, "wake"});
+            ESP_LOGI(TAG, "Registered wake phrase %d: '%s' (display: '%s')", cmd_idx + 1, phrase.c_str(), display_phrase.c_str());
+            cmd_idx++;
+        }
+        if (comma == std::string::npos) break;
+        pos = comma + 1;
+    }
+#endif
+}
+
 bool CustomWakeWord::Initialize(AudioCodec* codec, srmodel_list_t* models_list) {
     codec_ = codec;
     commands_.clear();
 
     if (models_list == nullptr) {
-        language_ = "cn";
+        language_ = CONFIG_CUSTOM_WAKE_WORD_LANGUAGE;
         models_ = esp_srmodel_init("model");
         owns_models_ = models_ != nullptr;
-#ifdef CONFIG_CUSTOM_WAKE_WORD
-        threshold_ = CONFIG_CUSTOM_WAKE_WORD_THRESHOLD / 100.0f;
-        commands_.push_back({CONFIG_CUSTOM_WAKE_WORD, CONFIG_CUSTOM_WAKE_WORD_DISPLAY, "wake"});
-#endif
+        ParseKconfigWakeWords();
     } else {
         models_ = models_list;
         ParseWakenetModelConfig();
+        if (commands_.empty()) {
+            // No index.json (board has no assets partition) — fall back to Kconfig wake words
+            language_ = CONFIG_CUSTOM_WAKE_WORD_LANGUAGE;
+            ParseKconfigWakeWords();
+        }
     }
 
     if (models_ == nullptr || models_->num == -1) {
