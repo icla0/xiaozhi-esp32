@@ -570,6 +570,13 @@ void AudioService::EnableVoiceProcessing(bool enable) {
             return;
         }
         ResetDecoder();
+        /* Shared-I2S boards (e.g. BoxAudioCodec): enabling playback reconfigures
+         * the bus and silently breaks the record direction while input_enabled_
+         * stays true, so EnableInput(true) would early-return with a dead mic.
+         * Cycle input off here; ReadAudioData lazily re-opens it from scratch. */
+        if (codec_ != nullptr && codec_->input_enabled()) {
+            codec_->EnableInput(false);
+        }
         audio_input_need_warmup_ = true;
         {
             std::lock_guard<std::mutex> lock(input_resampler_mutex_);
