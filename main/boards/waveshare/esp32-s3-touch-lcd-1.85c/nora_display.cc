@@ -14,13 +14,13 @@
 
 #define TAG "NoraDisplay"
 
-/* Fonts. The 16px face comes from the build config (BUILTIN_TEXT_FONT, now the
- * full 5377-glyph puhui). The 30px centre face is Nora-specific and declared
- * here directly rather than carried on the theme. */
+/* Fonts. English UI, so the ASCII-covering "basic" faces suffice (~134KB total
+ * vs 3.3MB for the full CJK faces). The 30px centre face is declared here
+ * directly rather than carried on the theme. */
 LV_FONT_DECLARE(BUILTIN_TEXT_FONT);
 LV_FONT_DECLARE(BUILTIN_ICON_FONT);
 LV_FONT_DECLARE(font_awesome_30_4);
-LV_FONT_DECLARE(font_puhui_30_4);
+LV_FONT_DECLARE(font_puhui_basic_30_4);
 
 namespace {
 
@@ -34,8 +34,8 @@ const int kChatWidth = 280;
 const int kPttWidth = 160;
 const int kPttHeight = 44;
 const int kPttBottomGap = 30;
-const char* kPttTextIdle = "按住说话";
-const char* kPttTextActive = "松开结束";
+const char* kPttTextIdle = "Hold to Talk";
+const char* kPttTextActive = "Release";
 
 const int kRingDiameter = 350;
 const int kRingStroke = 6;
@@ -58,6 +58,45 @@ void AlignOnArc(lv_obj_t* obj, int angle_deg, int radius) {
 /* lv_anim exec_cb signature is void(void*, int32_t) — wrap the styled setter. */
 void RingOpaAnim(void* obj, int32_t v) {
     lv_obj_set_style_opa(static_cast<lv_obj_t*>(obj), (lv_opa_t)v, 0);
+}
+
+/* The basic font covers ASCII but not typographic punctuation. LLMs emit curly
+ * quotes / dashes / ellipsis (all UTF-8 E2 80 xx), which would render as boxes.
+ * Fold them down to ASCII equivalents. (Belt-and-braces; ideally the server
+ * prompt also constrains the model to plain ASCII punctuation.) */
+std::string SanitizeText(const char* s) {
+    std::string in(s ? s : ""), out;
+    out.reserve(in.size());
+    for (size_t i = 0; i < in.size();) {
+        unsigned char b0 = (unsigned char)in[i];
+        if (i + 2 < in.size()) {
+            unsigned char b1 = (unsigned char)in[i + 1];
+            unsigned char b2 = (unsigned char)in[i + 2];
+            // U+2000–U+203F general punctuation: curly quotes / dashes / ellipsis
+            if (b0 == 0xE2 && b1 == 0x80) {
+                if (b2 == 0x98 || b2 == 0x99) { out += '\''; i += 3; continue; }  // ' '
+                if (b2 == 0x9C || b2 == 0x9D) { out += '"';  i += 3; continue; }  // " "
+                if (b2 == 0x93 || b2 == 0x94) { out += '-';  i += 3; continue; }  // – —
+                if (b2 == 0xA6)               { out += "..."; i += 3; continue; }  // …
+            }
+            // Decode any well-formed 3-byte code point and fold full-width /
+            // CJK punctuation down to ASCII (the basic font has no glyph for these).
+            if ((b0 & 0xF0) == 0xE0 && (b1 & 0xC0) == 0x80 && (b2 & 0xC0) == 0x80) {
+                unsigned int cp = ((b0 & 0x0F) << 12) | ((b1 & 0x3F) << 6) | (b2 & 0x3F);
+                // Full-width ASCII forms U+FF01–U+FF5E map 1:1 to ASCII 0x21–0x7E
+                // (covers ，！？：；（）and the full-width tilde ～ U+FF5E).
+                if (cp >= 0xFF01 && cp <= 0xFF5E) { out += (char)(cp - 0xFEE0); i += 3; continue; }
+                switch (cp) {
+                    case 0x3000: out += ' ';  i += 3; continue;  // ideographic space
+                    case 0x3001: out += ',';  i += 3; continue;  // 、
+                    case 0x3002: out += '.';  i += 3; continue;  // 。
+                    case 0x301C: out += '~';  i += 3; continue;  // 〜 wave dash
+                }
+            }
+        }
+        out += in[i++];
+    }
+    return out;
 }
 
 }  // namespace
@@ -217,7 +256,7 @@ void NoraDisplay::SetupUI() {
     lv_label_set_text(chat_message_label_, "");
     lv_obj_set_width(chat_message_label_, kChatWidth);
     lv_label_set_long_mode(chat_message_label_, LV_LABEL_LONG_WRAP);
-    lv_obj_set_style_text_font(chat_message_label_, &font_puhui_30_4, 0);
+    lv_obj_set_style_text_font(chat_message_label_, &font_puhui_basic_30_4, 0);
     lv_obj_set_style_text_align(chat_message_label_, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_color(chat_message_label_, th->text_color(), 0);
     lv_obj_center(chat_message_label_);
@@ -225,7 +264,7 @@ void NoraDisplay::SetupUI() {
 
     /* Idle clock — HH:MM, 30px centred, shown only in standby (D5). */
     clock_label_ = lv_label_create(screen);
-    lv_obj_set_style_text_font(clock_label_, &font_puhui_30_4, 0);
+    lv_obj_set_style_text_font(clock_label_, &font_puhui_basic_30_4, 0);
     lv_obj_set_style_text_color(clock_label_, th->text_color(), 0);
     lv_label_set_text(clock_label_, "");
     lv_obj_center(clock_label_);
@@ -503,16 +542,14 @@ void NoraDisplay::SetChatMessage(const char* role, const char* content) {
         return;
     }
 
-    // A user line means the child finished; the LLM is now working — enter
-    // thinking (A2). Per B the spinner replaces the text, so the user line is
-    // not shown.
-    if (role != nullptr && strcmp(role, "user") == 0) {
-        ShowThinking(true);
-        return;
-    }
-
+    // Both the user's ASR result and the assistant's answer show centred,
+    // replacing each other — the child sees what they said, then the reply.
+    // (Supersedes the earlier B behaviour where the user line was hidden
+    // behind the thinking spinner.)
+    (void)role;
     ShowThinking(false);
-    lv_label_set_text(chat_message_label_, content);
+    std::string clean = SanitizeText(content);
+    lv_label_set_text(chat_message_label_, clean.c_str());
     lv_obj_remove_flag(chat_message_label_, LV_OBJ_FLAG_HIDDEN);
     lv_obj_center(chat_message_label_);
     if (clock_label_) lv_obj_add_flag(clock_label_, LV_OBJ_FLAG_HIDDEN);
