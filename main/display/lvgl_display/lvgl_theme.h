@@ -27,6 +27,8 @@ public:
     inline lv_color_t system_text_color() const { return system_text_color_; }
     inline lv_color_t border_color() const { return border_color_; }
     inline lv_color_t low_battery_color() const { return low_battery_color_; }
+    inline lv_color_t accent_color() const { return accent_color_; }
+    inline lv_color_t accent_pressed_color() const { return accent_pressed_color_; }
     inline std::shared_ptr<LvglImage> background_image() const { return background_image_; }
     inline std::shared_ptr<EmojiCollection> emoji_collection() const { return emoji_collection_; }
     inline std::shared_ptr<LvglFont> text_font() const { return text_font_; }
@@ -43,6 +45,8 @@ public:
     inline void set_system_text_color(lv_color_t system_text) { system_text_color_ = system_text; }
     inline void set_border_color(lv_color_t border) { border_color_ = border; }
     inline void set_low_battery_color(lv_color_t low_battery) { low_battery_color_ = low_battery; }
+    inline void set_accent_color(lv_color_t accent) { accent_color_ = accent; }
+    inline void set_accent_pressed_color(lv_color_t accent_pressed) { accent_pressed_color_ = accent_pressed; }
     inline void set_background_image(std::shared_ptr<LvglImage> background_image) { background_image_ = background_image; }
     inline void set_emoji_collection(std::shared_ptr<EmojiCollection> emoji_collection) { emoji_collection_ = emoji_collection; }
     inline void set_text_font(std::shared_ptr<LvglFont> text_font) { text_font_ = text_font; }
@@ -62,6 +66,10 @@ private:
     lv_color_t system_text_color_;
     lv_color_t border_color_;
     lv_color_t low_battery_color_;
+    // Accent (Nora push-to-talk button + status animations). Defaults are
+    // harmless for boards that never read them.
+    lv_color_t accent_color_ = lv_color_hex(0x2196F3);
+    lv_color_t accent_pressed_color_ = lv_color_hex(0x1976D2);
 
     // Background image
     std::shared_ptr<LvglImage> background_image_ = nullptr;
