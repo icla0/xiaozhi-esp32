@@ -36,23 +36,13 @@ CONFIG_SPIRAM_SPEED_80M=y
 # ── Flash Size ────────────────────────────────────────────────────────────
 CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
 
-# ── Custom Wake Word "Hi Nora" ────────────────────────────────────────────
-# CONFIG_USE_CUSTOM_WAKE_WORD=y enables the custom MultiNet wake word feature.
-# English wake phrases require the English MultiNet7 model (mn7_en):
-#   - CONFIG_SR_MN_EN_MULTINET7_QUANT=y selects mn7_en (~2.6MB, lives in the
-#     "model" flash partition — partitions.csv must contain a partition named
-#     "model", otherwise no model is flashed and wake word init fails).
-#   - esp_mn_commands_add() runs flite_g2p() text→phoneme conversion only
-#     under MULTINET7_QUANT, so plain text like "Hi Nora" works with mn7_en.
-# Multiple phrases are comma-separated (parsed in custom_wake_word.cc).
-#
-# CONFIG_CUSTOM_WAKE_WORD_DISPLAY is the text shown on the LCD screen.
-CONFIG_USE_CUSTOM_WAKE_WORD=y
-CONFIG_CUSTOM_WAKE_WORD_LANGUAGE="en"
-CONFIG_CUSTOM_WAKE_WORD="Hi Nora,Hey Nora"
-CONFIG_CUSTOM_WAKE_WORD_DISPLAY="Hi Nora,Hey Nora"
-CONFIG_CUSTOM_WAKE_WORD_THRESHOLD=20
-CONFIG_SR_MN_EN_MULTINET7_QUANT=y
+# ── Wake word disabled (ADR 0005: push-to-talk only) ─────────────────────
+# The MultiNet custom wake word ("Hi Nora") ran continuously in idle and
+# speaking states; its synchronous detect inside the AFE ProcessingTask could
+# stall fetch and jam the whole audio pipeline (issue #03, AFE feed-full
+# flood on the second conversation round). PTT interrupts via the button, so
+# wake word detection is unnecessary.
+CONFIG_WAKE_WORD_DISABLED=y
 
 # ── OTA URL (replace SPARK_IP with your spark machine's LAN IP) ────────────
 # The device contacts this URL on first boot to activate and receive config.

@@ -11,6 +11,12 @@
 
 #define TAG "CustomWakeWord"
 
+/* Compiled unconditionally on S3 (see main/CMakeLists.txt); when the wake word
+ * choice is WAKE_WORD_DISABLED the CONFIG_CUSTOM_WAKE_WORD_* symbols vanish. */
+#ifndef CONFIG_CUSTOM_WAKE_WORD_LANGUAGE
+#define CONFIG_CUSTOM_WAKE_WORD_LANGUAGE "en"
+#endif
+
 CustomWakeWord::CustomWakeWord()
     : wake_word_opus_() {
 }

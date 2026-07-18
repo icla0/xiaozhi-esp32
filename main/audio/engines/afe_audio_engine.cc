@@ -65,6 +65,12 @@ bool AfeAudioEngine::Initialize(AudioCodec* codec, int frame_duration_ms, srmode
 
     char* wakenet_model_name = nullptr;
     char* multinet_model_name = nullptr;
+#ifndef CONFIG_WAKE_WORD_DISABLED
+    /* Detector selection is model-driven: whatever sits in the "model"
+     * partition wins. When the wake word is disabled by config (ADR 0005,
+     * PTT-only), skip the scan entirely so leftover flashed models cannot
+     * re-enable MultiNet/WakeNet — their detect load saturates CPU1 together
+     * with opus_codec (task_wdt starvation, AFE feed-full flood, issue #03). */
     if (models_ != nullptr && models_->num > 0) {
         wakenet_model_name = esp_srmodel_filter(models_, ESP_WN_PREFIX, nullptr);
         multinet_model_name = esp_srmodel_filter(models_, ESP_MN_PREFIX, nullptr);
@@ -72,6 +78,7 @@ bool AfeAudioEngine::Initialize(AudioCodec* codec, int frame_duration_ms, srmode
             ESP_LOGI(TAG, "Model %d: %s", i, models_->model_name[i]);
         }
     }
+#endif
 
     if (multinet_model_name != nullptr) {
         wake_detector_ = WakeDetector::kMultiNet;
