@@ -15,6 +15,8 @@
 #include <esp_lcd_panel_io.h>
 #include <esp_lcd_panel_ops.h>
 #include <esp_lcd_st77916.h>
+#include <esp_lcd_touch_cst816s.h>
+#include <esp_lvgl_port.h>
 #include <esp_timer.h>
 #include "esp_io_expander_tca9554.h"
 
@@ -356,6 +358,63 @@ private:
                                     DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y, DISPLAY_SWAP_XY);
     }
 
+    // CST9217 capacitive touch (mirrors amoled-2.16). Reuses the board's
+    // existing i2c_bus_ (I2C_NUM_0, shared with TCA9554 + codec) — the
+    // config's TP_PORT=I2C_NUM_1 points at the same physical pins, so a
+    // second bus would conflict. Must run after the display so
+    // lv_display_get_default() returns it.
+    void InitializeTouch() {
+        // CST9217 reset is released in InitializeTca9554 (EXIO0|EXIO1); give
+        // the controller time to come up before the first I2C read, else it
+        // NACKs ("Enter command mode failed").
+        vTaskDelay(pdMS_TO_TICKS(200));
+
+        // Diagnostic: probe the whole I2C bus so we can see the touch
+        // controller's actual address (expected 0x5A for CST9217).
+        for (uint8_t a = 1; a < 0x78; a++) {
+            if (i2c_master_probe(i2c_bus_, a, 50) == ESP_OK) {
+                ESP_LOGI(TAG, "I2C probe: device found at 0x%02X", a);
+            }
+        }
+
+        esp_lcd_touch_handle_t tp;
+        esp_lcd_touch_config_t tp_cfg = {
+            .x_max = DISPLAY_WIDTH - 1,
+            .y_max = DISPLAY_HEIGHT - 1,
+            .rst_gpio_num = TP_PIN_NUM_RST,   // GPIO_NUM_NC (reset via TCA9554)
+            .int_gpio_num = TP_PIN_NUM_INT,   // GPIO_NUM_4
+            .levels = { .reset = 0, .interrupt = 0 },
+            .flags = { .swap_xy = 0, .mirror_x = 0, .mirror_y = 0 },
+        };
+        // This board's panel is CST816S @ 0x15 (I2C scan found 0x15, not the
+        // CST9217's 0x5A) — Waveshare ships the 1.85C with different touch ICs.
+        // Build the io config by hand: the CST816S CONFIG macro lists fields
+        // out of declaration order and trips -Werror=reorder-init-list.
+        esp_lcd_panel_io_handle_t tp_io_handle = NULL;
+        esp_lcd_panel_io_i2c_config_t tp_io_config = {};
+        tp_io_config.dev_addr = ESP_LCD_TOUCH_IO_I2C_CST816S_ADDRESS;  // 0x15
+        tp_io_config.control_phase_bytes = 1;
+        tp_io_config.dc_bit_offset = 0;
+        tp_io_config.lcd_cmd_bits = 8;
+        tp_io_config.flags.disable_control_phase = 1;
+        tp_io_config.scl_speed_hz = 400 * 1000;
+        // Defensive: a touch failure must not boot-loop the whole device.
+        if (esp_lcd_new_panel_io_i2c(i2c_bus_, &tp_io_config, &tp_io_handle) != ESP_OK) {
+            ESP_LOGW(TAG, "touch i2c io init failed; touch disabled");
+            return;
+        }
+        if (esp_lcd_touch_new_i2c_cst816s(tp_io_handle, &tp_cfg, &tp) != ESP_OK) {
+            ESP_LOGW(TAG, "CST816S init failed; touch disabled");
+            return;
+        }
+        const lvgl_port_touch_cfg_t touch_cfg = {
+            .disp = lv_display_get_default(),
+            .handle = tp,
+        };
+        lvgl_port_add_touch(&touch_cfg);
+        ESP_LOGI(TAG, "CST9217 touch initialized");
+    }
+
     void InitializeButtons() {
         boot_button_.OnClick([this]() {
             auto& app = Application::GetInstance();
@@ -374,6 +433,7 @@ public:
         InitializeTca9554();
         InitializeSpi();
         Initializest77916Display();
+        InitializeTouch();
         InitializeButtons();
         GetBacklight()->RestoreBrightness();
     }
